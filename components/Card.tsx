@@ -44,8 +44,8 @@ export function Card({ id, title, domain, image, state = "ok", onClick, layout =
   });
 
   const style: React.CSSProperties = {
-    transform: isDragging ? undefined : CSS.Transform.toString(transform),
-    opacity: isDragging ? 0 : 1,
+    transform: CSS.Transform.toString(transform),
+    opacity: isDragging ? 0.4 : 1,
     border: isSelected ? "1px solid rgba(139, 92, 246, 0.6)" : undefined,
   };
 
