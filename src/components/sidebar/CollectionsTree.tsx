@@ -223,7 +223,7 @@ function TreeNodeRow({
         className={[
           "group relative flex cursor-pointer items-center rounded-md px-2 py-1",
           isActive ? "bg-white/10 text-white" : "text-text-secondary hover:bg-white/5",
-          isOver ? "ring-1 ring-violet-400" : "",
+          isOver ? "ring-2 ring-violet-400 bg-violet-500/10" : "",
         ].join(" ")}
         style={{ paddingLeft: depth * 16 + 8 }}
         onClick={() => onSelect?.(collection.id)}

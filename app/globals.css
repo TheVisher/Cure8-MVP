@@ -399,6 +399,7 @@ html, body, #root {
   color: #f7f9ff;
   position: relative;
   pointer-events: none;
+  z-index: 9999;
 }
 
 .drag-overlay-heading {

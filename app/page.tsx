@@ -561,12 +561,7 @@ function MainContent() {
     (event: DragStartEvent) => {
       if (event.active.data.current?.type !== "card") return;
       const cardId = event.active.data.current.cardId as string;
-      const currentSelected = useCardsStore.getState().selectedIds;
-      const dragIds = currentSelected.includes(cardId) ? currentSelected : [cardId];
-      if (!currentSelected.includes(cardId)) {
-        useCardsStore.getState().selectOnly(cardId);
-      }
-      setActiveDragIds(dragIds);
+      setActiveDragIds([cardId]);
       const stateCards = useCardsStore.getState().cards;
       setActiveDragCard(stateCards[cardId] ?? null);
     },
