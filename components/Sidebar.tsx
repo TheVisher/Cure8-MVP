@@ -35,12 +35,14 @@ export function Sidebar({ active = "Home", onChange }: SidebarProps) {
               onClick={() => onChange?.(item.id)}
               className={["sidebar-nav-button", isActive ? "is-active" : ""].join(" ").trim()}
             >
-              <span className={["sidebar-nav-icon", isActive ? "is-active" : ""].join(" ").trim()}>
-                <svg className="sidebar-nav-icon-symbol" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                </svg>
+              <span className="sidebar-nav-content">
+                <span className={["sidebar-nav-icon", isActive ? "is-active" : ""].join(" ").trim()}>
+                  <svg className="sidebar-nav-icon-symbol" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                  </svg>
+                </span>
+                <span className="sidebar-nav-label">{item.label}</span>
               </span>
-              <span className="sidebar-nav-label">{item.label}</span>
             </button>
           );
         })}
@@ -57,12 +59,14 @@ export function Sidebar({ active = "Home", onChange }: SidebarProps) {
               onClick={() => onChange?.(item.id)}
               className={["sidebar-nav-button", isActive ? "is-active" : ""].join(" ").trim()}
             >
-              <span className={["sidebar-nav-icon", isActive ? "is-active" : ""].join(" ").trim()}>
-                <svg className="sidebar-nav-icon-symbol" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                </svg>
+              <span className="sidebar-nav-content">
+                <span className={["sidebar-nav-icon", isActive ? "is-active" : ""].join(" ").trim()}>
+                  <svg className="sidebar-nav-icon-symbol" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                  </svg>
+                </span>
+                <span className="sidebar-nav-label">{item.label}</span>
               </span>
-              <span className="sidebar-nav-label">{item.label}</span>
             </button>
           );
         })}
