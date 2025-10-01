@@ -1,62 +1,104 @@
-# Cure8 - Clean Rebuild
+# Cure8-Clean MVP
 
-A clean, production-ready rebuild of Cure8 bookmark manager with the same beautiful cosmic purple theme and all features, but none of the bugs.
+A modern bookmark management application built with Next.js 15, designed to help you curate and organize what matters most.
 
-## Features
+## 🚀 Features
 
-✅ **Bookmark Management**
-- Add bookmarks via URL paste (auto-fetch metadata)
-- CRUD operations with SQLite database
-- Notes and descriptions
-- Import/Export JSON
+- **Pure Next.js 15** - Latest App Router architecture
+- **React 19** - Modern React with TypeScript
+- **Prisma Database** - SQLite database with type-safe queries
+- **Tailwind CSS 4.0** - Modern styling system
+- **Bookmark Management** - Save, organize, and manage web links
+- **Metadata Fetching** - Automatic preview generation
+- **Responsive Design** - Works on all devices
+- **Multiple Layouts** - Grid, Masonry, List, and Compact views
 
-✅ **Beautiful UI**
-- Cosmic purple theme with gradients and glows
-- 4 layout modes: Grid, Masonry, List, Compact
-- Responsive design
-- Smooth animations and transitions
+## 🛠️ Tech Stack
 
-✅ **Views**
-- Home dashboard with stats
-- All Bookmarks, Work, Personal, Favorites, Recent
-- Settings with preferences
-- Help section
+- **Framework**: Next.js 15.1.6
+- **Language**: TypeScript 5
+- **Styling**: Tailwind CSS 4.0
+- **Database**: Prisma with SQLite
+- **Package Manager**: pnpm
 
-✅ **Search & Filter**
-- Real-time search
-- Filter by category
-- Smart URL detection in omnibox
+## 🚀 Getting Started
 
-## Tech Stack
+### Prerequisites
 
-- **Next.js 15** - App Router
-- **React 19** - Latest features
-- **Prisma** - Type-safe database ORM
-- **SQLite** - Local database
-- **TailwindCSS 4** - Styling
-- **TypeScript** - Type safety
+- Node.js 18+ 
+- pnpm (recommended) or npm
 
-## Getting Started
+### Installation
 
-### Install Dependencies
+1. Clone the repository:
+```bash
+git clone <your-repo-url>
+cd cure8-clean
+```
 
+2. Install dependencies:
 ```bash
 pnpm install
+# or
+npm install
 ```
 
-### Initialize Database
-
+3. Set up the database:
 ```bash
-pnpm prisma:push
+pnpm prisma generate
+pnpm prisma db push
 ```
 
-### Run Development Server
-
+4. Start the development server:
 ```bash
 pnpm dev
+# or
+npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+5. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## 📁 Project Structure
+
+```
+cure8-clean/
+├── app/                    # Next.js App Router
+│   ├── api/               # API routes
+│   ├── globals.css        # Global styles
+│   ├── layout.tsx         # Root layout
+│   └── page.tsx           # Home page
+├── components/            # React components
+│   ├── AppShell.tsx       # Main app layout
+│   ├── BookmarkModal.tsx  # Bookmark details modal
+│   ├── Card.tsx           # Bookmark card component
+│   ├── HomeScreen.tsx     # Home dashboard
+│   ├── SettingsScreen.tsx # Settings page
+│   └── Sidebar.tsx        # Navigation sidebar
+├── lib/                   # Utility functions
+│   ├── cards.ts           # Database operations
+│   └── db.ts              # Prisma client
+├── prisma/                # Database schema
+└── public/                # Static assets
+```
+
+## 🎯 MVP Goals
+
+This is the MVP version of Cure8, focused on:
+
+- ✅ Core bookmark management functionality
+- ✅ Clean, modern UI/UX
+- ✅ Responsive design
+- ✅ Type-safe development
+- ✅ Production-ready build system
+
+## 🚀 Deployment
+
+The app is ready for deployment on platforms like:
+
+- **Vercel** (recommended for Next.js)
+- **Netlify**
+- **Railway**
+- **DigitalOcean App Platform**
 
 ### Build for Production
 
@@ -65,128 +107,32 @@ pnpm build
 pnpm start
 ```
 
-## Project Structure
+## 📝 Development
 
-```
-cure8-clean/
-├── app/
-│   ├── api/cards/          # API routes for CRUD
-│   ├── globals.css         # All styling (cosmic purple theme)
-│   ├── layout.tsx          # Root layout
-│   └── page.tsx            # Main page with state management
-├── components/
-│   ├── AppShell.tsx        # Layout shell with sidebar/header
-│   ├── BookmarkModal.tsx   # Detailed bookmark view
-│   ├── Card.tsx            # Bookmark card component
-│   ├── HomeScreen.tsx      # Home dashboard
-│   ├── SettingsScreen.tsx  # Settings view
-│   └── Sidebar.tsx         # Navigation sidebar
-├── lib/
-│   ├── cards.ts            # Database operations
-│   └── db.ts               # Prisma client
-└── prisma/
-    └── schema.prisma       # Database schema
-```
+### Available Scripts
 
-## Features Included
+- `pnpm dev` - Start development server
+- `pnpm build` - Build for production
+- `pnpm start` - Start production server
+- `pnpm lint` - Run ESLint
+- `pnpm prisma:generate` - Generate Prisma client
+- `pnpm prisma:push` - Push schema to database
 
-### Bookmark Management
-- ✅ Add URLs with automatic metadata fetching
-- ✅ Edit notes for each bookmark
-- ✅ Delete bookmarks with confirmation
-- ✅ View detailed modal with all info
-- ✅ Status tracking (pending/ok/error)
+### Code Quality
 
-### Layout Modes
-- ✅ **Grid** - Standard card grid
-- ✅ **Masonry** - Pinterest-style layout
-- ✅ **List** - Detailed list view with all info
-- ✅ **Compact** - Dense card grid
+- TypeScript for type safety
+- ESLint for code quality
+- Prettier for code formatting
+- Tailwind CSS for consistent styling
 
-### Settings
-- ✅ Auto-fetch metadata toggle
-- ✅ Show thumbnails toggle
-- ✅ Custom preview service URL
-- ✅ Export bookmarks (JSON)
-- ✅ Import bookmarks (JSON)
-- ✅ Clear all data
+## 🤝 Contributing
 
-### Home Dashboard
-- ✅ Total bookmarks count
-- ✅ Status breakdown (ready/pending/errors)
-- ✅ Recent bookmarks preview
-- ✅ Quick actions
-- ✅ Statistics cards
+This is an MVP project. For contributions or issues, please contact the development team.
 
-## Database
+## 📄 License
 
-Uses SQLite with Prisma ORM. The database file is created at `prisma/dev.db`.
-
-### Schema
-
-```prisma
-model Card {
-  id          String   @id @default(cuid())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  title       String
-  url         String
-  image       String?
-  notes       String?
-  description String?
-  domain      String?
-  status      String   @default("ok")
-  metadata    String?
-}
-```
-
-## API Routes
-
-- `GET /api/cards` - List all bookmarks
-- `POST /api/cards` - Create bookmark
-- `PATCH /api/cards/[id]` - Update bookmark
-- `DELETE /api/cards/[id]` - Delete bookmark
-- `DELETE /api/cards` - Clear all bookmarks
-
-## Styling
-
-All CSS is in `app/globals.css` with:
-- Cosmic purple theme (#7C3AED primary)
-- Dark mode with gradients
-- Custom scrollbars
-- Glassmorphism effects
-- Smooth animations
-- Responsive breakpoints
-
-## What's Different from the Old Version
-
-✨ **Clean codebase** - No legacy issues or browser polyfills
-✨ **Better organization** - Clear separation of concerns
-✨ **Type safety** - Full TypeScript throughout
-✨ **Modern Next.js** - Latest App Router patterns
-✨ **No bugs** - Fresh start without accumulated issues
-
-## Notes
-
-- The preview service URL defaults to `http://localhost:8787/preview?url={{url}}`
-- You can change this in Settings
-- **Preview service is optional** - If unavailable, bookmarks are saved with just the URL (no metadata fetch)
-- Import/Export uses standard JSON format compatible with the old version
-- All data is stored locally in SQLite
-- No hydration errors - all localStorage reads happen after mount
-- 10-second timeout on preview fetches to prevent hanging
-
-## Troubleshooting
-
-### "Failed to fetch" when adding bookmarks
-This is normal if the preview service (`http://localhost:8787`) isn't running. The bookmark is still saved successfully, just without metadata. You can either:
-1. Disable "Auto-fetch metadata" in Settings, or
-2. Set up a preview service, or
-3. Ignore the console warning - bookmarks work fine without it
-
-### Hydration errors
-Fixed! All localStorage access now happens after component mount in `useEffect`.
+Private project - All rights reserved.
 
 ---
 
-Built with ❤️ using Next.js 15, React 19, and Prisma
+**Cure8-Clean MVP** - Curate what matters most today.
