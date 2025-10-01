@@ -1,13 +1,17 @@
-'use client';
+﻿'use client';
 
 import React from "react";
+
+import { CollectionsTree } from "@/src/components/sidebar/CollectionsTree";
 
 type SidebarProps = {
   active?: string;
   onChange: (id: string) => void;
+  onSelectCollection?: (collectionId: string) => void;
+  activeCollectionId?: string | null;
 };
 
-export function Sidebar({ active = "Home", onChange }: SidebarProps) {
+export function Sidebar({ active = "Home", onChange, onSelectCollection, activeCollectionId }: SidebarProps) {
   const navigationItems = [
     { id: "Home", label: "Home", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
     { id: "All", label: "All Bookmarks", icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" },
@@ -47,6 +51,8 @@ export function Sidebar({ active = "Home", onChange }: SidebarProps) {
           );
         })}
       </div>
+
+      <CollectionsTree activeCollectionId={activeCollectionId} onSelectCollection={onSelectCollection} />
 
       <div className="sidebar-nav-footer">
         {bottomItems.map((item) => {

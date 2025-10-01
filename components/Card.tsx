@@ -1,6 +1,10 @@
-'use client';
+﻿'use client';
 
 import React from "react";
+import { useDraggable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+
+import { useCardsStore } from "@/src/state/cardsStore";
 
 function safeHost(link: string) {
   if (!link) return "";
@@ -12,6 +16,7 @@ function safeHost(link: string) {
 }
 
 type CardProps = {
+  id: string;
   title: string;
   domain?: string;
   image?: string;
@@ -21,7 +26,52 @@ type CardProps = {
   url: string;
 };
 
-export function Card({ title, domain, image, state = "ok", onClick, layout = "grid", url }: CardProps) {
+export function Card({ id, title, domain, image, state = "ok", onClick, layout = "grid", url }: CardProps) {
+  const selectedIds = useCardsStore((store) => store.selectedIds);
+  const selectOnly = useCardsStore((store) => store.selectOnly);
+  const toggleSelect = useCardsStore((store) => store.toggleSelect);
+  const selectRange = useCardsStore((store) => store.selectRange);
+  const setSelection = useCardsStore((store) => store.setSelection);
+
+  const isSelected = selectedIds.includes(id);
+
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `card:${id}`,
+    data: {
+      type: "card",
+      cardId: id,
+    },
+  });
+
+  const style: React.CSSProperties = {
+    transform: isDragging ? undefined : CSS.Transform.toString(transform),
+    opacity: isDragging ? 0 : 1,
+    border: isSelected ? "1px solid rgba(139, 92, 246, 0.6)" : undefined,
+  };
+
+  const handlePointerDown: React.PointerEventHandler<HTMLDivElement> = (event) => {
+    if (event.button !== 0) return;
+
+    if (event.shiftKey) {
+      event.preventDefault();
+      selectRange(id);
+    } else if (event.metaKey || event.ctrlKey) {
+      event.preventDefault();
+      toggleSelect(id);
+    } else if (!isSelected) {
+      selectOnly(id);
+    } else {
+      setSelection(selectedIds);
+    }
+
+    listeners.onPointerDown?.(event);
+  };
+
+  const handleClick: React.MouseEventHandler<HTMLDivElement> = (event) => {
+    if (event.shiftKey || event.metaKey || event.ctrlKey) return;
+    onClick();
+  };
+
   const showSkeleton = state === "pending";
 
   const displayTitle = title?.trim() || url || domain || "Untitled";
@@ -43,7 +93,21 @@ export function Card({ title, domain, image, state = "ok", onClick, layout = "gr
 
   if (layout === "list") {
     return (
-      <div className="bookmark-list-item" onClick={onClick} role="button">
+      <div
+        ref={setNodeRef}
+        {...attributes}
+        {...listeners}
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
+        role="button"
+        className={[
+          "bookmark-list-item",
+          isSelected ? "is-selected" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={style}
+      >
         <div className="bookmark-list-thumb">
           {showSkeleton ? (
             <div className="bookmark-list-thumb-skeleton" />
@@ -75,7 +139,7 @@ export function Card({ title, domain, image, state = "ok", onClick, layout = "gr
 
         <span className={statusClass}>{statusLabel}</span>
         <div className="bookmark-list-open" aria-hidden="true">
-          ↗
+          &rsaquo;
         </div>
       </div>
     );
@@ -87,6 +151,7 @@ export function Card({ title, domain, image, state = "ok", onClick, layout = "gr
   const cardClasses = ["bookmark-card", "group"];
   if (isMasonry) cardClasses.push("bookmark-card--masonry");
   if (isCompact) cardClasses.push("bookmark-card--compact");
+  if (isSelected) cardClasses.push("bookmark-card--selected");
 
   const contentClasses = ["bookmark-card-content"];
   if (isMasonry) contentClasses.push("bookmark-card-content--masonry");
@@ -119,7 +184,15 @@ export function Card({ title, domain, image, state = "ok", onClick, layout = "gr
   const placeholderContent = displayDomain || placeholderText || "link";
 
   return (
-    <div onClick={onClick} className={cardClasses.join(" ")}>
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={style}
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+      className={cardClasses.join(" ")}
+    >
       <div className={contentClasses.join(" ")}>
         <div className={mediaClasses.join(" ")}>
           {showSkeleton ? (
