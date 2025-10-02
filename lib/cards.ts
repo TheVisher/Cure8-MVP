@@ -36,6 +36,26 @@ function sanitize<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(entries) as T;
 }
 
+const encodeStringArray = (value: unknown): string => {
+  if (!Array.isArray(value)) return "[]";
+  return JSON.stringify(value.filter((item): item is string => typeof item === "string"));
+};
+
+const decodeStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value !== "string" || value.length === 0) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+};
+
 export async function listCards(options: { limit?: number; cursor?: string } = {}) {
   const rawLimit = Number.isFinite(options.limit) ? Number(options.limit) : undefined;
   const take = Math.min(Math.max(rawLimit ?? 50, 1), 100);
@@ -78,8 +98,8 @@ export async function createCard(input: CreateCardInput) {
     id,
     ...rest,
     status: (rest.status ?? "PENDING") as CardStatus,
-    tags: Array.isArray(rest.tags) ? rest.tags : [],
-    collections: Array.isArray(rest.collections) ? rest.collections : [],
+    tags: encodeStringArray(rest.tags),
+    collections: encodeStringArray(rest.collections),
     createdAt: createdAt ? new Date(createdAt) : undefined,
     updatedAt: updatedAt ? new Date(updatedAt) : undefined,
   });
@@ -95,8 +115,8 @@ export async function updateCard(id: string, input: UpdateCardInput) {
   const data = sanitize({
     ...input,
     status: input.status as CardStatus | undefined,
-    tags: Array.isArray(input.tags) ? input.tags : undefined,
-    collections: Array.isArray(input.collections) ? input.collections : undefined,
+    tags: input.tags !== undefined ? encodeStringArray(input.tags) : undefined,
+    collections: input.collections !== undefined ? encodeStringArray(input.collections) : undefined,
     metadata: input.metadata !== undefined ? (input.metadata as Prisma.InputJsonValue) : undefined,
   });
 
@@ -123,8 +143,8 @@ function serializeCard(card: Card) {
     title: card.title,
     notes: card.notes,
     status: card.status as CardStatus,
-    tags: card.tags,
-    collections: card.collections,
+    tags: decodeStringArray(card.tags),
+    collections: decodeStringArray(card.collections),
     domain: card.domain,
     image: card.image,
     description: card.description,
