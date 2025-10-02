@@ -27,9 +27,10 @@ type BookmarkModalProps = {
   onClose: () => void;
   onDelete: () => void;
   onUpdateNotes: (id: string, notes: string) => void;
+  deleting?: boolean;
 };
 
-export function BookmarkModal({ item, onClose, onDelete, onUpdateNotes }: BookmarkModalProps) {
+export function BookmarkModal({ item, onClose, onDelete, onUpdateNotes, deleting = false }: BookmarkModalProps) {
   const displayTitle = item.title?.trim() || item.url || item.domain || "Untitled";
   const displayDomain = item.domain || safeHost(item.url);
   const savedAt = item.createdAt ? new Date(item.createdAt) : null;
@@ -112,6 +113,7 @@ export function BookmarkModal({ item, onClose, onDelete, onUpdateNotes }: Bookma
                 type="button"
                 className="bookmark-modal-note-save"
                 disabled={!dirty || isSaving}
+                aria-busy={isSaving}
                 onClick={handleSave}
               >
                 Save Notes
@@ -130,7 +132,12 @@ export function BookmarkModal({ item, onClose, onDelete, onUpdateNotes }: Bookma
             >
               Open Link
             </button>
-            <button className="bookmark-modal-delete" onClick={onDelete}>
+            <button
+              className="bookmark-modal-delete"
+              onClick={onDelete}
+              disabled={deleting}
+              aria-busy={deleting}
+            >
               Delete
             </button>
           </div>

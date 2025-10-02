@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Card } from "./Card";
+import type { CardStatus } from "@/src/lib/types";
 
 type BookmarkItem = {
   id: string;
@@ -9,9 +10,8 @@ type BookmarkItem = {
   url: string;
   domain: string;
   image?: string | null;
-  description: string;
-  notes: string;
-  state: "ok" | "pending" | "error";
+  notes?: string | null;
+  status: CardStatus;
   createdAt: number;
 };
 
@@ -131,10 +131,11 @@ export default function HomeScreen({
             {recentItems.map(item => (
               <div key={item.id} className="home-recent-card">
                 <Card
+                  id={item.id}
                   title={item.title}
                   domain={item.domain}
                   image={showThumbnails ? item.image || undefined : undefined}
-                  state={item.state}
+                  status={item.status}
                   onClick={() => onSelectBookmark(item)}
                   url={item.url}
                 />

@@ -10,11 +10,17 @@ import { Card } from "@/components/Card";
 import HomeScreen from "@/components/HomeScreen";
 import SettingsScreen from "@/components/SettingsScreen";
 import { Sidebar } from "@/components/Sidebar";
+import ErrorBoundary from "@/src/components/ErrorBoundary";
 import { MoveToCollection } from "@/src/components/pickers/MoveToCollection";
 import { ToastViewport } from "@/src/components/modals/ToastViewport";
 import { collectionsOrchestrator } from "@/src/lib/collectionsOrchestrator";
 import { collectionTagSlug } from "@/src/lib/tags";
-import type { Card as CardType, CardState } from "@/src/lib/types";
+import type { Card as CardType, CardStatus } from "@/src/lib/types";
+import { PREVIEW_SERVICE_URL } from "@/src/lib/env";
+import { randomId } from "@/src/lib/id";
+import { apiFetch, ApiError } from "@/src/lib/api";
+import { sanitizeHtml } from "@/src/lib/sanitize";
+import { isValidUrl } from "@/src/lib/validate";
 import { useCardsStore } from "@/src/state/cardsStore";
 import { useCollectionsStore } from "@/src/state/collectionsStore";
 import { useToastStore } from "@/src/state/toastStore";
@@ -25,7 +31,7 @@ const LAYOUT_KEY = "cure8.layout";
 const defaultSettings = {
   autoFetchMetadata: true,
   showThumbnails: true,
-  previewServiceUrl: "http://localhost:8787/preview?url={{url}}",
+  previewServiceUrl: PREVIEW_SERVICE_URL,
 };
 
 const LAYOUT_OPTIONS = [
@@ -36,6 +42,20 @@ const LAYOUT_OPTIONS = [
 ];
 
 const CARDS_API_URL = "/api/cards";
+const PAGE_LIMIT = 50;
+
+const sanitizeOptional = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const cleaned = sanitizeHtml(value);
+  return cleaned.length > 0 ? cleaned : null;
+};
+
+const buildCardsQuery = (cursor?: string) => {
+  const params = new URLSearchParams();
+  params.set("limit", String(PAGE_LIMIT));
+  if (cursor) params.set("cursor", cursor);
+  return `${CARDS_API_URL}?${params.toString()}`;
+};
 
 type BookmarkItem = {
   id: string;
@@ -43,9 +63,8 @@ type BookmarkItem = {
   url: string;
   domain: string;
   image?: string | null;
-  description: string;
-  notes: string;
-  state: CardState;
+  notes?: string | null;
+  status: CardStatus;
   createdAt: number;
 };
 
@@ -58,25 +77,53 @@ function safeHost(url: string) {
   }
 }
 
+const coerceStatus = (value: unknown): CardStatus => {
+  if (typeof value === "string") {
+    const normalized = value.toUpperCase();
+    if (normalized === "READY" || normalized === "PENDING" || normalized === "ERROR") {
+      return normalized;
+    }
+    if (normalized === "OK") return "READY";
+  }
+  return "PENDING";
+};
+
+const ensureStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const unique = new Set<string>();
+  value.forEach((entry) => {
+    if (typeof entry !== "string") return;
+    const trimmed = entry.trim();
+    if (trimmed) unique.add(trimmed);
+  });
+  return Array.from(unique);
+};
+
 function normalizeServerCard(card: any): CardType {
   const createdAt = card.createdAt
     ? typeof card.createdAt === "string"
       ? card.createdAt
       : new Date(card.createdAt).toISOString()
     : new Date().toISOString();
+  const updatedAt = card.updatedAt
+    ? typeof card.updatedAt === "string"
+      ? card.updatedAt
+      : new Date(card.updatedAt).toISOString()
+    : createdAt;
 
   return {
     id: card.id,
-    title: card.title || card.url || "Untitled",
-    url: card.url || "",
-    domain: card.domain || safeHost(card.url),
-    image: card.image || null,
-    description: card.description || "",
-    notes: card.notes || "",
-    state: (card.status as CardState) || "ok",
+    url: typeof card.url === "string" ? card.url : "",
+    title: sanitizeOptional(card.title) ?? (typeof card.title === "string" ? card.title : card.url || null),
+    notes: sanitizeOptional(card.notes),
+    status: coerceStatus(card.status),
+    tags: ensureStringArray(card.tags),
+    collections: ensureStringArray(card.collections),
     createdAt,
-    updatedAt: card.updatedAt ? new Date(card.updatedAt).toISOString() : undefined,
-    tags: Array.isArray(card.tags) ? card.tags : [],
+    updatedAt,
+    domain: typeof card.domain === "string" ? card.domain : safeHost(card.url),
+    image: card.image ?? null,
+    description: sanitizeOptional(card.description),
     metadata: card.metadata ?? null,
   };
 }
@@ -88,44 +135,39 @@ function normalizeImportedCard(raw: any, index: number): CardType {
     : typeof createdAtValue === "number"
     ? new Date(createdAtValue).toISOString()
     : new Date(Date.now() - index).toISOString();
+  const updatedAt = raw?.updatedAt && typeof raw.updatedAt === "string" ? raw.updatedAt : createdAt;
 
   return {
     id: typeof raw?.id === "string" ? raw.id : randomId(),
-    title: typeof raw?.title === "string" ? raw.title : raw?.url || "Untitled",
     url: typeof raw?.url === "string" ? raw.url : "",
+    title: sanitizeOptional(raw?.title) ?? (typeof raw?.url === "string" ? raw.url : null),
+    notes: sanitizeOptional(raw?.notes),
+    status: coerceStatus(raw?.status ?? raw?.state),
+    tags: ensureStringArray(raw?.tags),
+    collections: ensureStringArray(raw?.collections),
+    createdAt,
+    updatedAt,
     domain: typeof raw?.domain === "string" ? raw.domain : safeHost(raw?.url),
     image: typeof raw?.image === "string" ? raw.image : null,
-    description: typeof raw?.description === "string" ? raw.description : "",
-    notes: typeof raw?.notes === "string" ? raw.notes : "",
-    state: (raw?.state as CardState) || "ok",
-    createdAt,
-    updatedAt: raw?.updatedAt && typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
-    tags: Array.isArray(raw?.tags) ? raw.tags.filter((tag: unknown) => typeof tag === "string") : [],
+    description: sanitizeOptional(raw?.description),
     metadata: raw?.metadata ?? null,
   };
 }
 
 function toServerPayload(card: CardType) {
   return {
-    title: card.title,
+    title: sanitizeOptional(card.title),
     url: card.url,
-    image: card.image ?? null,
-    notes: card.notes ?? "",
-    description: card.description ?? "",
-    domain: card.domain ?? safeHost(card.url),
-    status: card.state ?? "ok",
-    metadata: card.metadata ?? null,
+    notes: sanitizeOptional(card.notes),
+    status: card.status,
+    tags: card.tags,
+    collections: card.collections,
+    domain: sanitizeOptional(card.domain),
+    image: card.image,
+    description: sanitizeOptional(card.description),
+    metadata: card.metadata,
   };
 }
-
-const randomId = () => {
-  try {
-    if (typeof window !== "undefined" && window.crypto?.randomUUID) {
-      return window.crypto.randomUUID();
-    }
-  } catch {}
-  return `id_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
-};
 
 const buildPreviewRequestUrl = (template: string, targetUrl: string) => {
   const safeTemplate = (template || "").trim();
@@ -142,13 +184,12 @@ const buildPreviewRequestUrl = (template: string, targetUrl: string) => {
 function toBookmarkItem(card: CardType): BookmarkItem {
   return {
     id: card.id,
-    title: card.title,
+    title: card.title || card.url || "Untitled",
     url: card.url ?? "",
     domain: card.domain ?? safeHost(card.url),
     image: card.image ?? null,
-    description: card.description ?? "",
-    notes: card.notes ?? "",
-    state: card.state ?? "ok",
+    notes: card.notes ?? null,
+    status: card.status ?? "READY",
     createdAt: Date.parse(card.createdAt ?? "") || Date.now(),
   };
 }
@@ -169,10 +210,17 @@ function MainContent() {
   const setCards = useCardsStore((state) => state.setCards);
   const upsertCard = useCardsStore((state) => state.upsertCard);
   const removeCard = useCardsStore((state) => state.removeCard);
-  const bulkAssignTag = useCardsStore((state) => state.bulkAssignTag);
-  const bulkRemoveTag = useCardsStore((state) => state.bulkRemoveTag);
   const selectedIds = useCardsStore((state) => state.selectedIds);
   const clearSelection = useCardsStore((state) => state.clearSelection);
+
+  const applyServerCard = React.useCallback(
+    (raw: any) => {
+      const normalized = normalizeServerCard(raw);
+      upsertCard(normalized);
+      return normalized;
+    },
+    [upsertCard],
+  );
 
   const showToast = useToastStore((state) => state.show);
 
@@ -201,6 +249,13 @@ function MainContent() {
   const [collectionFilterSlug, setCollectionFilterSlug] = React.useState<string | null>(null);
   const [activeDragIds, setActiveDragIds] = React.useState<string[]>([]);
   const [activeDragCard, setActiveDragCard] = React.useState<CardType | null>(null);
+  const metadataAbortRef = React.useRef<AbortController | null>(null);
+  const [initialLoading, setInitialLoading] = React.useState(true);
+  const [initialLoadError, setInitialLoadError] = React.useState<string | null>(null);
+  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [loadMoreError, setLoadMoreError] = React.useState<string | null>(null);
+  const [deletingCardId, setDeletingCardId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -228,26 +283,9 @@ function MainContent() {
     } catch {}
   }, [layoutMode]);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    const bootstrap = async () => {
-      try {
-        const response = await fetch(CARDS_API_URL, { cache: "no-store" });
-        if (!response.ok) throw new Error(`Failed with ${response.status}`);
-        const data = await response.json();
-        if (Array.isArray(data) && !cancelled) {
-          const normalized = data.map(normalizeServerCard);
-          setCards(normalized);
-        }
-      } catch (error) {
-        console.error("Failed to load bookmarks from API", error);
-      }
-    };
-    bootstrap();
-    return () => {
-      cancelled = true;
-    };
-  }, [setCards]);
+  React.useEffect(() => () => {
+    metadataAbortRef.current?.abort();
+  }, []);
 
   React.useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -321,97 +359,208 @@ function MainContent() {
   }, []);
 
   const handleAddUrl = React.useCallback(
-    async (url: string) => {
-      const id = randomId();
-      const domain = (() => {
-        try {
-          return new URL(url).hostname.replace(/^www\./, "");
-        } catch {
-          return url;
-        }
-      })();
+    async (rawUrl: string) => {
+      const url = rawUrl.trim();
+      if (!url) return;
+      if (!isValidUrl(url)) {
+        showToast({ message: "Please enter a valid URL", kind: "danger" });
+        return;
+      }
 
-      const createdAt = new Date().toISOString();
-      const newCard: CardType = {
-        id,
-        title: url,
-        domain,
-        url,
-        description: "",
-        notes: "",
-        state: settings.autoFetchMetadata ? "pending" : "ok",
-        image: null,
-        createdAt,
-        updatedAt: createdAt,
-        tags: [],
-        metadata: null,
+      const finalizeReady = async (cardId: string, updates: Record<string, unknown> = {}) => {
+        const payload: Record<string, unknown> & { status: string } = { status: "READY" };
+        if ("title" in updates) {
+          const cleaned = sanitizeOptional(updates.title);
+          payload.title = cleaned ?? null;
+        }
+        if ("notes" in updates) {
+          const cleaned = sanitizeOptional(updates.notes);
+          payload.notes = cleaned ?? null;
+        }
+        if ("tags" in updates && Array.isArray(updates.tags)) {
+          payload.tags = updates.tags;
+        }
+        if ("collections" in updates && Array.isArray(updates.collections)) {
+          payload.collections = updates.collections;
+        }
+
+        try {
+          const response = await apiFetch(`${CARDS_API_URL}/${cardId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          applyServerCard(await response.json());
+        } catch (error) {
+          const current = useCardsStore.getState().cards[cardId];
+          if (current) {
+            const nextCard: CardType = {
+              ...current,
+              ...("title" in payload ? { title: (payload.title as string | null) ?? null } : {}),
+              ...("notes" in payload ? { notes: (payload.notes as string | null) ?? null } : {}),
+              ...("tags" in payload ? { tags: payload.tags as string[] } : {}),
+              status: "READY",
+              updatedAt: new Date().toISOString(),
+            };
+            upsertCard(nextCard);
+          }
+          throw error;
+        }
       };
 
-      upsertCard(newCard);
-
-      await fetch(CARDS_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id,
-          ...toServerPayload(newCard),
-          createdAt,
-        }),
-      });
-
-      if (!settings.autoFetchMetadata) return;
-
       try {
-        const requestUrl = buildPreviewRequestUrl(settings.previewServiceUrl, url);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-        const res = await fetch(requestUrl, {
-          signal: controller.signal,
-          mode: "cors",
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!res.ok) throw new Error(`Preview service responded with ${res.status}`);
-        const meta = await res.json();
-
-        const updatedCard: CardType = {
-          ...newCard,
-          title: meta.title || newCard.title,
-          domain: meta.domain || newCard.domain,
-          image: meta.cardImage || meta.heroImage || null,
-          url: meta.url || newCard.url || url,
-          description: meta.description || newCard.description || "",
-          state: "ok",
-          updatedAt: new Date().toISOString(),
-        };
-
-        upsertCard(updatedCard);
-
-        await fetch(`${CARDS_API_URL}/${id}`, {
-          method: "PATCH",
+        const createResponse = await apiFetch(CARDS_API_URL, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ...toServerPayload(updatedCard),
-            status: "ok",
+            url,
+            status: settings.autoFetchMetadata ? "PENDING" : "READY",
           }),
         });
+
+        const createdCard = applyServerCard(await createResponse.json());
+
+        if (!settings.autoFetchMetadata) return;
+
+        const controller = new AbortController();
+        metadataAbortRef.current?.abort();
+        metadataAbortRef.current = controller;
+
+        const requestUrl = buildPreviewRequestUrl(settings.previewServiceUrl, url);
+        const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+        const dedupeStrings = (values: unknown): string[] => {
+          if (!Array.isArray(values)) return [];
+          const unique = new Set<string>();
+          values.forEach((value) => {
+            if (typeof value !== "string") return;
+            const trimmed = value.trim();
+            if (trimmed) unique.add(trimmed);
+          });
+          return Array.from(unique);
+        };
+
+        try {
+          const response = await fetch(requestUrl, {
+            signal: controller.signal,
+            mode: "cors",
+          });
+
+          window.clearTimeout(timeoutId);
+
+          if (!response.ok) throw new Error(`Preview service responded with ${response.status}`);
+          const metadata = await response.json();
+
+          const payload: Record<string, unknown> = {};
+          const derivedTitle =
+            sanitizeOptional(metadata?.title) ?? createdCard.title ?? createdCard.url;
+          if (derivedTitle) payload.title = derivedTitle;
+
+          const notesContent =
+            sanitizeOptional(metadata?.notes) ?? sanitizeOptional(metadata?.description);
+          if (notesContent) payload.notes = notesContent;
+
+          const tags = dedupeStrings(metadata?.tags);
+          if (tags.length > 0) payload.tags = tags;
+
+          await finalizeReady(createdCard.id, payload);
+        } catch (previewError) {
+          window.clearTimeout(timeoutId);
+
+          if (controller.signal.aborted || (previewError instanceof DOMException && previewError.name === "AbortError")) {
+            await finalizeReady(createdCard.id).catch(() => {});
+            return;
+          }
+
+          console.warn(
+            "Preview service unavailable, bookmark saved without metadata:",
+            previewError instanceof Error ? previewError.message : previewError,
+          );
+
+          await finalizeReady(createdCard.id).catch((error) => {
+            console.warn("Failed to update card status", error);
+          });
+        } finally {
+          if (metadataAbortRef.current === controller) {
+            metadataAbortRef.current = null;
+          }
+        }
       } catch (error) {
-        console.warn(
-          "Preview service unavailable, bookmark saved without metadata:",
-          error instanceof Error ? error.message : error,
-        );
-        upsertCard({ ...newCard, state: "ok" });
-        await fetch(`${CARDS_API_URL}/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "ok" }),
-        });
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.error("Failed to add card", error);
+        const message = error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Unable to add card";
+        showToast({ message, kind: "danger" });
       }
     },
-    [settings.autoFetchMetadata, settings.previewServiceUrl, upsertCard],
+    [applyServerCard, settings.autoFetchMetadata, settings.previewServiceUrl, showToast, upsertCard],
   );
+
+  const loadCardsPage = React.useCallback(
+    async (cursor?: string) => {
+      const response = await apiFetch(buildCardsQuery(cursor), { cache: "no-store" });
+      const body = await response.json();
+      const items = Array.isArray(body.items) ? body.items : [];
+      const normalized = items.map(normalizeServerCard);
+      const next = typeof body.nextCursor === "string" && body.nextCursor.length > 0 ? body.nextCursor : null;
+      return { cards: normalized, nextCursor: next };
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setInitialLoading(true);
+    loadCardsPage()
+      .then(({ cards: pageCards, nextCursor: cursor }) => {
+        if (cancelled) return;
+        setCards(pageCards);
+        setNextCursor(cursor);
+        setInitialLoadError(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Failed to load cards", error);
+        const message = error instanceof ApiError || error instanceof Error ? error.message : "Unable to load cards";
+        setInitialLoadError(message);
+      })
+      .finally(() => {
+        if (!cancelled) setInitialLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCardsPage, setCards]);
+
+  const handleLoadMore = React.useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const { cards: pageCards, nextCursor: cursor } = await loadCardsPage(nextCursor);
+      if (pageCards.length > 0) {
+        const existing = useCardsStore.getState().list();
+        const existingIds = new Set(existing.map((card) => card.id));
+        const merged = [...existing];
+        pageCards.forEach((card: CardType) => {
+          if (!existingIds.has(card.id)) {
+            merged.push(card);
+            existingIds.add(card.id);
+          }
+        });
+        setCards(merged);
+      }
+      setNextCursor(cursor);
+    } catch (error) {
+      console.error("Failed to load more cards", error);
+      const message = error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Unable to load more cards";
+      setLoadMoreError(message);
+      showToast({ message, kind: "danger" });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadCardsPage, loadingMore, nextCursor, setCards, showToast]);
 
   const handleCardClick = React.useCallback(
     (cardId: string) => {
@@ -424,31 +573,46 @@ function MainContent() {
   const handleDeleteItem = React.useCallback(
     async (cardId: string) => {
       const card = cardsMap[cardId];
-      if (card && window.confirm(`Are you sure you want to delete "${card.title}"?`)) {
+      if (!card) return;
+      if (!window.confirm(`Are you sure you want to delete "${card.title ?? card.url}"?`)) return;
+
+      try {
+        setDeletingCardId(cardId);
+        await apiFetch(`${CARDS_API_URL}/${cardId}`, { method: "DELETE" });
+
         removeCard(cardId);
-        await fetch(`${CARDS_API_URL}/${cardId}`, { method: "DELETE" });
         if (showDetailsModal) {
           setShowDetailsModal(false);
           setFocusedCardId(null);
         }
+        showToast({ message: "Card deleted", kind: "success", durationMs: 2000 });
+      } catch (error) {
+        console.error("Failed to delete card", error);
+        const message = error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Unable to delete card";
+        showToast({ message, kind: "danger" });
+      } finally {
+        setDeletingCardId(null);
       }
     },
-    [cardsMap, removeCard, showDetailsModal],
+    [cardsMap, removeCard, showDetailsModal, showToast],
   );
 
   const handleUpdateNotes = React.useCallback(
     async (id: string, notes: string) => {
-      const current = cardsMap[id];
-      if (!current) return;
-      const updated: CardType = { ...current, notes, updatedAt: new Date().toISOString() };
-      upsertCard(updated);
-      await fetch(`${CARDS_API_URL}/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
+      try {
+        const response = await apiFetch(`${CARDS_API_URL}/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes: sanitizeOptional(notes) ?? null }),
+        });
+        applyServerCard(await response.json());
+      } catch (error) {
+        console.error("Failed to update notes", error);
+        const message = error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Unable to update notes";
+        showToast({ message, kind: "danger" });
+      }
     },
-    [cardsMap, upsertCard],
+    [applyServerCard, showToast],
   );
 
   const handleExport = React.useCallback(() => {
@@ -481,69 +645,146 @@ function MainContent() {
             return;
           }
           const normalized = importedItems.map(normalizeImportedCard);
-          normalized.forEach((card) => upsertCard(card));
-          await Promise.all(
-            normalized.map((entry) =>
-              fetch(CARDS_API_URL, {
+          let successCount = 0;
+
+          for (const entry of normalized) {
+            try {
+              const response = await apiFetch(CARDS_API_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  id: entry.id,
                   ...toServerPayload(entry),
                   createdAt: entry.createdAt,
+                  updatedAt: entry.updatedAt,
                 }),
-              }),
-            ),
-          );
-          alert(`Successfully imported ${importedItems.length} bookmarks!`);
-        } catch {
+              });
+              applyServerCard(await response.json());
+              successCount += 1;
+            } catch (error) {
+              console.error("Failed to import card", error);
+              showToast({
+                message: error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Unable to import card",
+                kind: "danger",
+              });
+            }
+          }
+
+          alert(`Successfully imported ${successCount} bookmark${successCount === 1 ? "" : "s"}!`);
+        } catch (error) {
+          console.error("Error reading import file", error);
           alert("Error reading file. Please make sure it's a valid JSON file.");
         }
       };
       reader.readAsText(file);
     };
     input.click();
-  }, [upsertCard]);
+  }, [applyServerCard, showToast]);
 
   const handleClearData = React.useCallback(async () => {
-    if (window.confirm("Clear all saved bookmarks? This cannot be undone.")) {
+    if (!window.confirm("Clear all saved bookmarks? This cannot be undone.")) return;
+
+    try {
+      await apiFetch(CARDS_API_URL, { method: "DELETE" });
+
       setCards([]);
       clearSelection();
-      await fetch(CARDS_API_URL, { method: "DELETE" });
       setShowDetailsModal(false);
       setFocusedCardId(null);
+      showToast({ message: "All cards cleared", kind: "success", durationMs: 2000 });
+    } catch (error) {
+      console.error("Failed to clear cards", error);
+      const message = error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Unable to clear cards";
+      showToast({ message, kind: "danger" });
     }
-  }, [clearSelection, setCards]);
+  }, [clearSelection, setCards, showToast]);
 
   const handleAssignToCollection = React.useCallback(
-    (cardIds: string[], collectionId: string) => {
+    async (cardIds: string[], collectionId: string) => {
       const collections = useCollectionsStore.getState().collections;
       const collection = collections[collectionId];
       if (!collection) return;
+
       const slug = collectionTagSlug(collection);
       const currentCards = useCardsStore.getState().cards;
-      const changed = cardIds.filter((cardId) => {
-        const card = currentCards[cardId];
-        return card && (!Array.isArray(card.tags) || !card.tags.includes(slug));
-      });
 
-      if (changed.length === 0) {
+      const targets = cardIds
+        .map((cardId) => {
+          const card = currentCards[cardId];
+          if (!card) return null;
+          if (card.tags.includes(slug)) return null;
+          return {
+            cardId,
+            tags: Array.from(new Set([...card.tags, slug])),
+            collections: Array.from(new Set([...(card.collections ?? []), slug])),
+          };
+        })
+        .filter(Boolean) as { cardId: string; tags: string[]; collections: string[] }[];
+
+      if (targets.length === 0) {
         showToast({ message: `Already in "${collection.name}"`, durationMs: 2500 });
         return;
       }
 
-      bulkAssignTag(cardIds, slug);
-      showToast({
-        message:
-          changed.length > 1
-            ? `Moved ${changed.length} cards to "${collection.name}"`
-            : `Moved to "${collection.name}"`,
-        actionLabel: "Undo",
-        onAction: () => bulkRemoveTag(cardIds, slug),
-        durationMs: 5000,
-      });
+      try {
+        const updatedCards = await Promise.all(
+          targets.map(async ({ cardId, tags, collections: nextCollections }) => {
+            const response = await apiFetch(`${CARDS_API_URL}/${cardId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tags, collections: nextCollections }),
+            });
+
+            return applyServerCard(await response.json());
+          }),
+        );
+
+        const undo = async () => {
+          try {
+            await Promise.all(
+              updatedCards.map(async (card) => {
+                const latest = useCardsStore.getState().cards[card.id];
+                if (!latest) return;
+                const nextTags = latest.tags.filter((value) => value !== slug);
+                const nextCollections = (latest.collections ?? []).filter((value) => value !== slug);
+                const response = await apiFetch(`${CARDS_API_URL}/${card.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ tags: nextTags, collections: nextCollections }),
+                });
+                applyServerCard(await response.json());
+              }),
+            );
+          } catch (error) {
+            console.error("Failed to undo collection assignment", error);
+            const message =
+              error instanceof ApiError || error instanceof Error
+                ? error.message
+                : `Couldn't undo move for "${collection.name}"`;
+            showToast({ message, kind: "danger" });
+          }
+        };
+
+        showToast({
+          message:
+            updatedCards.length > 1
+              ? `Moved ${updatedCards.length} cards to "${collection.name}"`
+              : `Moved to "${collection.name}"`,
+          actionLabel: "Undo",
+          onAction: () => {
+            void undo();
+          },
+          durationMs: 5000,
+        });
+      } catch (error) {
+        console.error("Failed to assign cards to collection", error);
+        const message =
+          error instanceof ApiError || error instanceof Error
+            ? error.message
+            : `Couldn't move cards to "${collection.name}"`;
+        showToast({ message, kind: "danger" });
+      }
     },
-    [bulkAssignTag, bulkRemoveTag, showToast],
+    [applyServerCard, showToast],
   );
 
   const handleCollectionSelect = React.useCallback((collectionId: string) => {
@@ -606,8 +847,8 @@ function MainContent() {
       />
     );
   } else if (activeView === "Home") {
-    const pendingCount = cards.filter((card) => card.state === "pending").length;
-    const errorCount = cards.filter((card) => card.state === "error").length;
+    const pendingCount = cards.filter((card) => card.status === "PENDING").length;
+    const errorCount = cards.filter((card) => card.status === "ERROR").length;
     const okCount = cards.length - pendingCount - errorCount;
     const recentItems = sortedByRecency.slice(0, 6).map(toBookmarkItem);
 
@@ -636,6 +877,9 @@ function MainContent() {
       </div>
     );
   } else {
+    const showLoadingState = initialLoading && filtered.length === 0;
+    const showEmptyState = !initialLoading && filtered.length === 0;
+
     content = (
       <>
         <div className="layout-toolbar">
@@ -654,7 +898,15 @@ function MainContent() {
           </div>
         </div>
 
-        {layoutMode === "list" ? (
+        {initialLoadError ? (
+          <div className="cards-error-banner">{initialLoadError}</div>
+        ) : null}
+
+        {showLoadingState ? (
+          <div className="cards-loading">Loading cards…</div>
+        ) : showEmptyState ? (
+          <div className="cards-empty">No cards found.</div>
+        ) : layoutMode === "list" ? (
           <div className="bookmark-list">
             {filtered.map((card) => (
               <Card
@@ -663,7 +915,7 @@ function MainContent() {
                 title={card.title}
                 domain={card.domain}
                 image={settings.showThumbnails ? card.image ?? undefined : undefined}
-                state={card.state}
+                status={card.status}
                 onClick={() => handleCardClick(card.id)}
                 layout={layoutMode as any}
                 url={card.url ?? ""}
@@ -679,7 +931,7 @@ function MainContent() {
                 title={card.title}
                 domain={card.domain}
                 image={settings.showThumbnails ? card.image ?? undefined : undefined}
-                state={card.state}
+                status={card.status}
                 onClick={() => handleCardClick(card.id)}
                 layout={layoutMode as any}
                 url={card.url ?? ""}
@@ -687,6 +939,15 @@ function MainContent() {
             ))}
           </div>
         )}
+
+        {nextCursor && activeView !== "Recent" ? (
+          <div className="cards-load-more">
+            <button type="button" onClick={handleLoadMore} disabled={loadingMore} aria-busy={loadingMore}>
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+            {loadMoreError ? <div className="cards-load-more-error">{loadMoreError}</div> : null}
+          </div>
+        ) : null}
       </>
     );
   }
@@ -705,34 +966,36 @@ function MainContent() {
         onSearch={handleSearch}
         onAddUrl={handleAddUrl}
       >
-        <DndContext
-          collisionDetection={closestCorners}
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          {content}
-          <DragOverlay>
-            {activeDragCard ? (
-              <div className="drag-overlay">
-                <div className="drag-overlay-heading">{activeDragCard.title || activeDragCard.url || "Untitled"}</div>
-                {activeDragCard.domain ? (
-                  <div className="drag-overlay-domain">{activeDragCard.domain}</div>
-                ) : null}
-                {activeDragIds.length > 1 ? (
-                  <div className="drag-overlay-count">+{activeDragIds.length - 1}</div>
-                ) : null}
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+        <ErrorBoundary fallback={<div className="cards-error-banner">We hit a rendering snag. Try again.</div>}>
+          <DndContext
+            collisionDetection={closestCorners}
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            {content}
+            <DragOverlay>
+              {activeDragCard ? (
+                <div className="drag-overlay">
+                  <div className="drag-overlay-heading">{activeDragCard.title || activeDragCard.url || "Untitled"}</div>
+                  {activeDragCard.domain ? (
+                    <div className="drag-overlay-domain">{activeDragCard.domain}</div>
+                  ) : null}
+                  {activeDragIds.length > 1 ? (
+                    <div className="drag-overlay-count">+{activeDragIds.length - 1}</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </ErrorBoundary>
 
         {showDetailsModal && focusedCard ? (
           <BookmarkModal
             item={{
               id: focusedCard.id,
-              title: focusedCard.title,
+              title: focusedCard.title || focusedCard.url || "Untitled",
               url: focusedCard.url ?? "",
               domain: focusedCard.domain ?? safeHost(focusedCard.url),
               image: focusedCard.image ?? null,
@@ -743,6 +1006,7 @@ function MainContent() {
             onClose={() => setShowDetailsModal(false)}
             onDelete={() => handleDeleteItem(focusedCard.id)}
             onUpdateNotes={handleUpdateNotes}
+            deleting={deletingCardId === focusedCard.id}
           />
         ) : null}
       </AppShell>

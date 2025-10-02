@@ -1,11 +1,8 @@
 ﻿'use client';
 
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { Card, CardState, ID } from "@/src/lib/types";
-
-const STORAGE_KEY = "cure8.cards.v1";
+import type { Card, CardStatus, ID } from "../lib/types";
 
 const now = () => new Date().toISOString();
 
@@ -19,6 +16,19 @@ const normalizeTags = (tags: string[] | undefined | null) => {
   });
   return Array.from(unique);
 };
+
+const normalizeCollections = (collections: string[] | undefined | null) => {
+  if (!Array.isArray(collections)) return [];
+  const unique = new Set<string>();
+  collections.forEach((slug) => {
+    if (!slug || typeof slug !== "string") return;
+    const trimmed = slug.trim();
+    if (trimmed) unique.add(trimmed);
+  });
+  return Array.from(unique);
+};
+
+const isCollectionSlug = (slug: string) => slug.startsWith("#");
 
 type CardsState = {
   cards: Record<ID, Card>;
@@ -36,7 +46,7 @@ type CardsState = {
   bulkRemoveTag: (cardIds: ID[], tagSlug: string) => void;
   replaceTagAcrossCards: (oldTag: string, newTag: string) => void;
   removeTagFromAll: (tagSlug: string) => void;
-  updateState: (cardId: ID, state: CardState) => void;
+  updateStatus: (cardId: ID, status: CardStatus) => void;
   selectOnly: (cardId: ID) => void;
   toggleSelect: (cardId: ID) => void;
   selectRange: (targetId: ID) => void;
@@ -51,9 +61,7 @@ const sortCardsByCreatedAtDesc = (cards: Card[]) =>
     return (isNaN(bTime) ? 0 : bTime) - (isNaN(aTime) ? 0 : aTime);
   });
 
-export const useCardsStore = create<CardsState>()(
-  persist(
-    (set, get) => ({
+export const useCardsStore = create<CardsState>()((set, get) => ({
       cards: {},
       order: [],
       selectedIds: [],
@@ -67,8 +75,11 @@ export const useCardsStore = create<CardsState>()(
       setCards: (incoming) => {
         const cards = sortCardsByCreatedAtDesc(incoming).map((card) => ({
           ...card,
+          status: card.status ?? "READY",
           tags: normalizeTags(card.tags),
+          collections: normalizeCollections(card.collections),
           createdAt: card.createdAt || now(),
+          updatedAt: card.updatedAt || now(),
         }));
         const byId: Record<ID, Card> = {};
         const order: ID[] = [];
@@ -82,9 +93,11 @@ export const useCardsStore = create<CardsState>()(
         set((state) => {
           const normalized: Card = {
             ...card,
+            status: card.status ?? "READY",
             tags: normalizeTags(card.tags),
+            collections: normalizeCollections(card.collections),
             createdAt: card.createdAt || now(),
-            updatedAt: now(),
+            updatedAt: card.updatedAt || card.createdAt || now(),
           };
           const nextCards = { ...state.cards, [card.id]: normalized };
           const exists = state.order.includes(card.id);
@@ -145,9 +158,14 @@ export const useCardsStore = create<CardsState>()(
           const card = state.cards[cardId];
           if (!card) return state;
           if (card.tags.includes(tagSlug)) return state;
+          const isCollection = isCollectionSlug(tagSlug);
+          const collections = card.collections ?? [];
           const updated: Card = {
             ...card,
             tags: [...card.tags, tagSlug],
+            collections: isCollection
+              ? Array.from(new Set([...collections, tagSlug]))
+              : collections,
             updatedAt: now(),
           };
           return { cards: { ...state.cards, [cardId]: updated } };
@@ -160,9 +178,13 @@ export const useCardsStore = create<CardsState>()(
           const card = state.cards[cardId];
           if (!card) return state;
           if (!card.tags.includes(tagSlug)) return state;
+          const isCollection = isCollectionSlug(tagSlug);
           const updated: Card = {
             ...card,
             tags: card.tags.filter((tag) => tag !== tagSlug),
+            collections: isCollection
+              ? (card.collections ?? []).filter((slug) => slug !== tagSlug)
+              : card.collections ?? [],
             updatedAt: now(),
           };
           return { cards: { ...state.cards, [cardId]: updated } };
@@ -174,6 +196,7 @@ export const useCardsStore = create<CardsState>()(
         set((state) => {
           let changed = false;
           const nextCards = { ...state.cards };
+          const isCollection = isCollectionSlug(trimmed);
           cardIds.forEach((cardId) => {
             const card = nextCards[cardId];
             if (!card) return;
@@ -182,6 +205,9 @@ export const useCardsStore = create<CardsState>()(
             nextCards[cardId] = {
               ...card,
               tags: [...card.tags, trimmed],
+              collections: isCollection
+                ? Array.from(new Set([...(card.collections ?? []), trimmed]))
+                : card.collections ?? [],
               updatedAt: now(),
             };
           });
@@ -195,6 +221,7 @@ export const useCardsStore = create<CardsState>()(
         set((state) => {
           let changed = false;
           const nextCards = { ...state.cards };
+          const isCollection = isCollectionSlug(trimmed);
           cardIds.forEach((cardId) => {
             const card = nextCards[cardId];
             if (!card) return;
@@ -203,6 +230,9 @@ export const useCardsStore = create<CardsState>()(
             nextCards[cardId] = {
               ...card,
               tags: card.tags.filter((tag) => tag !== trimmed),
+              collections: isCollection
+                ? (card.collections ?? []).filter((slug) => slug !== trimmed)
+                : card.collections ?? [],
               updatedAt: now(),
             };
           });
@@ -214,6 +244,8 @@ export const useCardsStore = create<CardsState>()(
         const from = oldTag.trim();
         const to = newTag.trim();
         if (!from || !to || from === to) return;
+        const fromIsCollection = isCollectionSlug(from);
+        const toIsCollection = isCollectionSlug(to);
         set((state) => {
           let changed = false;
           const nextCards = { ...state.cards };
@@ -222,7 +254,14 @@ export const useCardsStore = create<CardsState>()(
             changed = true;
             const tags = card.tags.filter((tag) => tag !== from);
             if (!tags.includes(to)) tags.push(to);
-            nextCards[card.id] = { ...card, tags, updatedAt: now() };
+            let collections = card.collections ?? [];
+            if (fromIsCollection) {
+              collections = collections.filter((slug) => slug !== from);
+            }
+            if (toIsCollection && !collections.includes(to)) {
+              collections = [...collections, to];
+            }
+            nextCards[card.id] = { ...card, tags, collections, updatedAt: now() };
           });
           if (!changed) return state;
           return { cards: nextCards };
@@ -231,6 +270,7 @@ export const useCardsStore = create<CardsState>()(
       removeTagFromAll: (tagSlug) => {
         const trimmed = tagSlug.trim();
         if (!trimmed) return;
+        const isCollection = isCollectionSlug(trimmed);
         set((state) => {
           let changed = false;
           const nextCards = { ...state.cards };
@@ -240,6 +280,9 @@ export const useCardsStore = create<CardsState>()(
             nextCards[card.id] = {
               ...card,
               tags: card.tags.filter((tag) => tag !== trimmed),
+              collections: isCollection
+                ? (card.collections ?? []).filter((slug) => slug !== trimmed)
+                : card.collections ?? [],
               updatedAt: now(),
             };
           });
@@ -247,7 +290,7 @@ export const useCardsStore = create<CardsState>()(
           return { cards: nextCards };
         });
       },
-      updateState: (cardId, stateValue) => {
+      updateStatus: (cardId, statusValue) => {
         set((state) => {
           const card = state.cards[cardId];
           if (!card) return state;
@@ -256,7 +299,7 @@ export const useCardsStore = create<CardsState>()(
               ...state.cards,
               [cardId]: {
                 ...card,
-                state: stateValue,
+                status: statusValue,
                 updatedAt: now(),
               },
             },
@@ -292,19 +335,7 @@ export const useCardsStore = create<CardsState>()(
         set({ selectedIds: slice, selectionAnchor });
       },
       setSelection: (cardIds) => {
-        set({ selectedIds: [...new Set(cardIds)], selectionAnchor: cardIds[cardIds.length - 1] });
+        set({ selectedIds: Array.from(new Set(cardIds)), selectionAnchor: cardIds[cardIds.length - 1] });
       },
       clearSelection: () => set({ selectedIds: [], selectionAnchor: undefined }),
-    }),
-    {
-      name: STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        cards: state.cards,
-        order: state.order,
-        selectedIds: state.selectedIds,
-        selectionAnchor: state.selectionAnchor,
-      }),
-    },
-  ),
-);
+    }));

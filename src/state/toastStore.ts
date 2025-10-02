@@ -2,6 +2,8 @@
 
 import { create } from "zustand";
 
+import { randomId } from "@/src/lib/id";
+
 export type Toast = {
   id: string;
   message: string;
@@ -14,15 +16,6 @@ type ToastState = {
   toasts: Toast[];
   show: (toast: Omit<Toast, "id"> & { id?: string; durationMs?: number }) => string;
   dismiss: (id: string) => void;
-};
-
-const randomId = () => {
-  try {
-    if (typeof window !== "undefined" && window.crypto?.randomUUID) {
-      return window.crypto.randomUUID();
-    }
-  } catch {}
-  return `toast_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
 };
 
 export const useToastStore = create<ToastState>((set, get) => ({

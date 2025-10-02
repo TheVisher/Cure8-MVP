@@ -3,6 +3,7 @@
 import React from "react";
 
 import MultiTagInput from "@/src/components/inputs/MultiTagInput";
+import { useCardsStore } from "@/src/state/cardsStore";
 
 type AddCardModalProps = {
   open: boolean;
@@ -26,6 +27,8 @@ export default function AddCardModal({ open, onClose, initialUrl, onSave }: AddC
   const [title, setTitle] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [tags, setTags] = React.useState<string[]>([]);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const upsertCard = useCardsStore((state) => state.upsertCard);
 
   React.useEffect(() => {
     if (!open) {
@@ -84,28 +87,68 @@ export default function AddCardModal({ open, onClose, initialUrl, onSave }: AddC
     return () => document.removeEventListener("mousedown", handler);
   }, [open, onClose]);
 
-  const handleSave = () => {
-    if (!title.trim()) return;
+  const handleSave = async () => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
 
-    const payload = {
-      url: url.trim() ? url.trim() : undefined,
-      title: title.trim(),
-      notes: notes.trim() ? notes.trim() : undefined,
-      tags,
-    };
+    const trimmedUrl = url.trim();
+    const trimmedNotes = notes.trim();
 
-    if (onSave) {
-      onSave(payload);
-    } else {
-      console.log("[AddCardModal] save", payload);
+    if (!trimmedUrl) {
+      alert("URL is required");
+      return;
     }
 
-    onClose();
+    if (isSaving) return;
+
+    setIsSaving(true);
+
+    try {
+      const tagSlugs = Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean)));
+
+      const response = await fetch("/api/cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: trimmedUrl,
+          title: trimmedTitle,
+          notes: trimmedNotes || null,
+          tags: tagSlugs,
+          status: "READY",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        const message = typeof errorBody?.error === "string" ? errorBody.error : "Unable to save card";
+        throw new Error(message);
+      }
+
+      const serverCard = await response.json();
+      upsertCard(serverCard);
+
+      if (onSave) {
+        onSave({
+          url: trimmedUrl,
+          title: trimmedTitle,
+          notes: trimmedNotes || undefined,
+          tags: tagSlugs,
+        });
+      }
+
+      onClose();
+    } catch (error) {
+      console.error("Failed to create card", error);
+      const message = error instanceof Error ? error.message : "Unable to save card";
+      alert(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!open) return null;
 
-  const saveDisabled = !title.trim();
+  const saveDisabled = !title.trim() || isSaving;
 
   return (
     <div className="fixed inset-0 z-[2000] bg-black/50 backdrop-blur-sm">

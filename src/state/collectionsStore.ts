@@ -12,14 +12,7 @@ const MAX_DEPTH = 4;
 const now = () => new Date().toISOString();
 const emptyNameFallback = (name: string) => name.trim() || "Untitled Collection";
 
-const randomId = () => {
-  try {
-    if (typeof window !== "undefined" && window.crypto?.randomUUID) {
-      return window.crypto.randomUUID();
-    }
-  } catch {}
-  return `col_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
-};
+import { randomId } from "@/src/lib/id";
 
 type RemoveMode = "reparent" | "delete-subtree";
 

@@ -1,21 +1,22 @@
 ﻿export type ID = string;
 
-export type CardState = "ok" | "pending" | "error";
+export type CardStatus = "PENDING" | "READY" | "ERROR";
 
-export type Card = {
+export interface Card {
   id: ID;
-  title: string;
-  url?: string;
+  url: string;
+  title?: string | null;
+  notes?: string | null;
+  status: CardStatus;
+  tags: string[];
+  collections: string[];
+  createdAt: string;
+  updatedAt: string;
   domain?: string | null;
   image?: string | null;
   description?: string | null;
-  notes?: string | null;
-  state?: CardState;
-  createdAt: string;
-  updatedAt?: string;
-  tags: string[];
   metadata?: unknown;
-};
+}
 
 export type Collection = {
   id: ID;

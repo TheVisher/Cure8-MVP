@@ -1,29 +1,33 @@
-import type { Card, Prisma } from "@prisma/client";
+import { type Card, Prisma } from "@prisma/client";
 import { prisma } from "./db";
-
-type CardStatus = "ok" | "pending" | "error";
+import type { CardStatus } from "@/src/lib/types";
 
 export type CreateCardInput = {
   id?: string;
-  title: string;
   url: string;
-  image?: string | null;
+  title?: string | null;
   notes?: string | null;
-  description?: string | null;
-  domain?: string | null;
   status?: CardStatus;
+  tags?: string[];
+  collections?: string[];
+  domain?: string | null;
+  image?: string | null;
+  description?: string | null;
   metadata?: Prisma.JsonValue;
   createdAt?: string | Date;
+  updatedAt?: string | Date;
 };
 
 export type UpdateCardInput = {
-  title?: string;
   url?: string;
-  image?: string | null;
+  title?: string | null;
   notes?: string | null;
-  description?: string | null;
-  domain?: string | null;
   status?: CardStatus;
+  tags?: string[];
+  collections?: string[];
+  domain?: string | null;
+  image?: string | null;
+  description?: string | null;
   metadata?: Prisma.JsonValue;
 };
 
@@ -32,20 +36,52 @@ function sanitize<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(entries) as T;
 }
 
-export async function listCards() {
-  const cards = await prisma.card.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-  return cards.map(serializeCard);
+export async function listCards(options: { limit?: number; cursor?: string } = {}) {
+  const rawLimit = Number.isFinite(options.limit) ? Number(options.limit) : undefined;
+  const take = Math.min(Math.max(rawLimit ?? 50, 1), 100);
+  const hasCursor = typeof options.cursor === "string" && options.cursor.length > 0;
+
+  const query: Prisma.CardFindManyArgs = {
+    take: take + 1,
+    orderBy: [
+      { createdAt: "desc" },
+      { id: "desc" },
+    ],
+  };
+
+  if (hasCursor) {
+    query.cursor = { id: options.cursor! };
+    query.skip = 1;
+  }
+  let cards: Card[] = [];
+  try {
+    cards = await prisma.card.findMany(query);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return { items: [], nextCursor: null };
+    }
+    throw error;
+  }
+  const hasNextPage = cards.length > take;
+  const items = hasNextPage ? cards.slice(0, take) : cards;
+  const nextCursor = hasNextPage ? items[items.length - 1]?.id ?? null : null;
+
+  return {
+    items: items.map(serializeCard),
+    nextCursor,
+  };
 }
 
 export async function createCard(input: CreateCardInput) {
-  const { id, createdAt, ...rest } = input;
+  const { id, createdAt, updatedAt, ...rest } = input;
   const data = sanitize({
     id,
     ...rest,
-    status: (rest.status ?? "ok") as CardStatus,
+    status: (rest.status ?? "PENDING") as CardStatus,
+    tags: Array.isArray(rest.tags) ? rest.tags : [],
+    collections: Array.isArray(rest.collections) ? rest.collections : [],
     createdAt: createdAt ? new Date(createdAt) : undefined,
+    updatedAt: updatedAt ? new Date(updatedAt) : undefined,
   });
 
   const card = await prisma.card.create({
@@ -59,12 +95,14 @@ export async function updateCard(id: string, input: UpdateCardInput) {
   const data = sanitize({
     ...input,
     status: input.status as CardStatus | undefined,
-    metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
+    tags: Array.isArray(input.tags) ? input.tags : undefined,
+    collections: Array.isArray(input.collections) ? input.collections : undefined,
+    metadata: input.metadata !== undefined ? (input.metadata as Prisma.InputJsonValue) : undefined,
   });
 
   const card = await prisma.card.update({
     where: { id },
-    data,
+    data: data as Prisma.CardUncheckedUpdateInput,
   });
 
   return serializeCard(card);
@@ -81,13 +119,15 @@ export async function clearCards() {
 function serializeCard(card: Card) {
   return {
     id: card.id,
-    title: card.title,
     url: card.url,
-    image: card.image,
+    title: card.title,
     notes: card.notes,
-    description: card.description,
-    domain: card.domain,
     status: card.status as CardStatus,
+    tags: card.tags,
+    collections: card.collections,
+    domain: card.domain,
+    image: card.image,
+    description: card.description,
     metadata: card.metadata,
     createdAt: card.createdAt.toISOString(),
     updatedAt: card.updatedAt.toISOString(),

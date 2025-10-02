@@ -1718,3 +1718,77 @@ html, body, #root {
     padding: 1.6rem;
   }
 }
+.cards-loading,
+.cards-empty,
+.cards-error-banner,
+.cards-load-more {
+  margin-top: 1.5rem;
+  text-align: center;
+  color: #d6bcfa;
+}
+
+.cards-error-banner {
+  color: #fca5a5;
+}
+
+.cards-load-more button {
+  padding: 0.6rem 1.5rem;
+  border-radius: 9999px;
+  background: rgba(139, 92, 246, 0.25);
+  color: #f5f3ff;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.cards-load-more button:hover:enabled {
+  background: rgba(139, 92, 246, 0.4);
+}
+
+.cards-load-more button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cards-load-more-error {
+  margin-top: 0.5rem;
+  color: #fca5a5;
+  font-size: 0.875rem;
+}
+
+.cards-error-retry {
+  margin-top: 0.75rem;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  background: rgba(248, 113, 113, 0.2);
+  color: #fee2e2;
+  font-weight: 600;
+}
+
+.cards-error-page {
+  background: radial-gradient(circle at top, rgba(124, 58, 237, 0.12), rgba(15, 23, 42, 0.95));
+  color: #f5f3ff;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.cards-error-container {
+  text-align: center;
+  max-width: 28rem;
+  padding: 3rem;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  border-radius: 24px;
+  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.45);
+}
+
+.cards-error-container button {
+  margin-top: 1rem;
+  padding: 0.5rem 1.5rem;
+  border-radius: 9999px;
+  background: rgba(139, 92, 246, 0.35);
+  color: #ede9fe;
+  font-weight: 600;
+}

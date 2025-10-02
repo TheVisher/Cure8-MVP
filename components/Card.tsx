@@ -5,6 +5,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
 import { useCardsStore } from "@/src/state/cardsStore";
+import type { CardStatus } from "@/src/lib/types";
 
 function safeHost(link: string) {
   if (!link) return "";
@@ -17,16 +18,16 @@ function safeHost(link: string) {
 
 type CardProps = {
   id: string;
-  title: string;
-  domain?: string;
-  image?: string;
-  state?: "ok" | "pending" | "error";
+  title?: string | null;
+  domain?: string | null;
+  image?: string | null;
+  status?: CardStatus;
   onClick: () => void;
   layout?: "grid" | "masonry" | "list" | "compact";
   url: string;
 };
 
-export function Card({ id, title, domain, image, state = "ok", onClick, layout = "grid", url }: CardProps) {
+export function Card({ id, title, domain, image, status = "READY", onClick, layout = "grid", url }: CardProps) {
   const selectedIds = useCardsStore((store) => store.selectedIds);
   const selectOnly = useCardsStore((store) => store.selectOnly);
   const toggleSelect = useCardsStore((store) => store.toggleSelect);
@@ -64,7 +65,7 @@ export function Card({ id, title, domain, image, state = "ok", onClick, layout =
       setSelection(selectedIds);
     }
 
-    listeners.onPointerDown?.(event);
+    listeners?.onPointerDown?.(event);
   };
 
   const handleClick: React.MouseEventHandler<HTMLDivElement> = (event) => {
@@ -72,7 +73,7 @@ export function Card({ id, title, domain, image, state = "ok", onClick, layout =
     onClick();
   };
 
-  const showSkeleton = state === "pending";
+  const showSkeleton = status === "PENDING";
 
   const displayTitle = title?.trim() || url || domain || "Untitled";
   const displayDomain = domain || safeHost(url) || "";
@@ -83,11 +84,11 @@ export function Card({ id, title, domain, image, state = "ok", onClick, layout =
     .toUpperCase();
 
   const statusLabel =
-    state === "pending" ? "Fetching" : state === "error" ? "Needs attention" : "Ready";
+    status === "PENDING" ? "Fetching" : status === "ERROR" ? "Needs attention" : "Ready";
   const statusClass =
-    state === "pending"
+    status === "PENDING"
       ? "bookmark-list-status bookmark-list-status--pending"
-      : state === "error"
+      : status === "ERROR"
       ? "bookmark-list-status bookmark-list-status--error"
       : "bookmark-list-status bookmark-list-status--ok";
 
